@@ -31,6 +31,9 @@ def payment_session(private_key: str) -> requests.Session:
     Raises ImportError with the install command when the x402 extra is
     missing; the client turns that into its own error.
     """
+    from hedge_fund.cost_policy import refuse_paid_service
+
+    refuse_paid_service("x402 wallet payments")
     try:
         from eth_account import Account
         from x402 import x402ClientSync

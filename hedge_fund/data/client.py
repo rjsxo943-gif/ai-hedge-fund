@@ -10,6 +10,8 @@ import time
 
 import requests
 
+from hedge_fund.cost_policy import refuse_paid_service
+
 from hedge_fund.data.models import (
     CompanyFacts,
     CompanyNews,
@@ -87,6 +89,7 @@ class FDClient:
         self._wallet_key = wallet_key or os.environ.get(WALLET_KEY_ENV, "")
         self._timeout = timeout
         if self.pays_per_call():
+            refuse_paid_service("Financial Datasets x402 payments")
             try:
                 self._session = payment_session(self._wallet_key)
             except ImportError as exc:
@@ -324,6 +327,7 @@ class FDClient:
         *path* may be an absolute URL (a ``next_page_url`` from a previous
         response), which is requested verbatim.
         """
+        refuse_paid_service("Financial Datasets API")
         url = path if path.startswith("http") else self.BASE_URL + path
         for attempt, delay in enumerate((*self._RETRY_DELAYS, None)):
             try:

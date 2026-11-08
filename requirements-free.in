@@ -1,0 +1,10 @@
+# Minimal personal-research environment. No paid-provider SDKs or wallet packages.
+pydantic>=2.4,<3
+requests>=2.32,<3
+rich>=14,<16
+numpy>=2,<3
+pandas>=2.2,<4
+yfinance>=1.8,<2
+tzdata>=2026.6
+pytest>=8,<10
+python-dotenv>=1,<2

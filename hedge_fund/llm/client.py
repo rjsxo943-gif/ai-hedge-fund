@@ -25,6 +25,8 @@ from typing import Protocol, runtime_checkable
 
 import requests
 
+from hedge_fund.cost_policy import refuse_paid_service
+
 from hedge_fund.llm import contract
 from hedge_fund.llm.registry import (
     env_var_for,
@@ -33,7 +35,7 @@ from hedge_fund.llm.registry import (
     SUPPORTED_PROVIDERS,
 )
 
-DEFAULT_MODEL = "claude-opus-5-5"
+DEFAULT_MODEL = "codex-subscription"
 
 # Called with each piece of text as it arrives. None means don't stream.
 TokenListener = Callable[[str], None] | None
@@ -87,6 +89,7 @@ class ChatLLM:
         self._on_token = on_token
 
     def complete(self, system: str, user: str) -> str:
+        refuse_paid_service("Model provider API")
         messages = [("system", system), ("human", user)]
         if self._on_token is None:
             return _flatten(self._chat.invoke(messages).content)
@@ -136,6 +139,7 @@ class JevLLM:
         return hashlib.sha256(canonical.encode()).hexdigest()[:24]
 
     def complete(self, system: str, user: str) -> str:
+        refuse_paid_service("TypeSafe API")
         request = contract.build_jev_request(system, user, self.model)
         started = time.monotonic()
         diagnostics = {
@@ -235,6 +239,11 @@ def make_llm(
     environment variable, because that is the only thing the user can act on.
     """
     model = model or os.environ.get("HEDGE_FUND_LLM_MODEL") or DEFAULT_MODEL
+    if model == "codex-subscription":
+        from hedge_fund.llm.codex_cli import CodexSubscriptionLLM
+
+        return CodexSubscriptionLLM(timeout=timeout)
+    refuse_paid_service(f"Model API ({model})")
     provider = provider_for(model)
     if provider is None:
         # Unlisted ids still work: a model newer than the registry should not
