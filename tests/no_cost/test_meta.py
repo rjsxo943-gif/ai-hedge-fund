@@ -1,4 +1,5 @@
 from datetime import date, datetime, timedelta, timezone
+from copy import deepcopy
 from io import BytesIO
 import json
 from pathlib import Path
@@ -87,6 +88,9 @@ def test_invalid_market_packets_stop(packet, mutation):
 
 def test_no_invented_evidence_ranges_or_allocations():
     plan = draft()
+    schema = meta.plan_schema(set(SERIES))
+    assert "enum" not in schema["properties"]["six_month_checkpoints"]["items"]
+    assert "enum" not in schema["properties"]["scenarios"]["items"]["properties"]["invalidation_triggers"]["items"]
     meta.validate_plan(plan, set(SERIES))
     plan["scenarios"][0]["evidence_ids"] = ["INVENTED"]
     with pytest.raises(ValueError):
@@ -157,6 +161,33 @@ def test_combined_equity_and_cash_limits_include_etfs(packet):
     assert {a["rule"] for a in p["risk_adjustments"]} >= {"ETF 포함 주식 합계 60% 상한", "현금 최소 15%"}
 
 
+def test_candidates_preserve_joint_weights_rank_and_risk_limits(packet):
+    tickers = [a["ticker"] for a in packet["assets"]] + ["CASH"]
+    reviews = {i: review(tickers) for i in INVESTORS}
+    for index, r in enumerate(reviews.values()):
+        r["scenario_probabilities"] = {"S1": .1 if index < 2 else .6, "S2": .9 if index < 2 else .4, "S3": 0}
+        r["scenario_allocations"]["S1"] = {t: .2 if t == "CASH" else .8 if t == ("SPY" if index < 2 else "IEF") else 0 for t in tickers}
+    result = {"data": packet, "reviews": reviews, "scenario_draft": draft(),
+              "portfolio": meta.constrained_portfolio(packet, reviews)}
+    saved = deepcopy(result)
+    candidates = meta.scenario_candidates(result)
+    assert result == saved
+    assert [c["id"] for c in candidates] == ["S2", "S1", "S3"]
+    assert [c["leading"] for c in candidates] == [True, False, False]
+    assert candidates[1]["portfolio"]["raw_weights"]["SPY"] == pytest.approx(.08)
+    for ticker in tickers:
+        reconstructed = sum(c["probability"] * c["portfolio"]["raw_weights"][ticker] for c in candidates)
+        assert reconstructed == pytest.approx(result["portfolio"]["raw_weights"][ticker])
+    for c in candidates:
+        weights = c["portfolio"]["target_weights"]
+        assert sum(weights.values()) == pytest.approx(1)
+        assert weights["CASH"] >= .15 - 1e-9
+        assert all(0 <= weights[t] <= .2 + 1e-9 for t in tickers[:-1])
+    for r in reviews.values():
+        r["scenario_probabilities"] = {"S1": .5, "S2": .5, "S3": 0}
+    assert sum(c["leading"] for c in meta.scenario_candidates(result)) == 2
+
+
 def test_end_to_end_cache_and_offline_report(packet, tmp_path, monkeypatch):
     class Client:
         model = "synthetic-offline"
@@ -176,9 +207,12 @@ def test_end_to_end_cache_and_offline_report(packet, tmp_path, monkeypatch):
     second, _ = meta.run_meta(tmp_path, packet_path=path)
     assert second["new_codex_calls"] == 0 and second["cache_hits"] == 6
     first["scenario_draft"]["market_regime"] = '<script>alert("x")</script>'
+    first["scenario_draft"]["scenarios"][0]["name"] = '<script>alert("x")</script>'
     html = render_meta_report(first)
     assert "<script>" not in html and "&lt;script&gt;" in html
     assert "6~12개월" in html and "워런 버핏" in html and "검증된 예측" in html and "합성 테스트" in html
+    assert html.index('id="candidates"') < html.index('id="scenarios"')
+    assert 'class="candidate-card leading" data-scenario="S1"' in html
     assert source("javascript:alert(1)") == "출처 링크 없음"
 
 

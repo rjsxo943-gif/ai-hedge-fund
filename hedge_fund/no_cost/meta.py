@@ -46,8 +46,9 @@ PLAN_SCHEMA = obj({"market_regime": {"type": "string"}, "six_month_checkpoints":
 
 def plan_schema(evidence_ids):
     schema = deepcopy(PLAN_SCHEMA)
-    schema["properties"]["scenarios"]["items"]["properties"]["evidence_ids"]["items"] = {
-        "type": "string", "enum": sorted(evidence_ids)}
+    # Replace the array object: deepcopy preserves STRINGS aliases in the plan.
+    schema["properties"]["scenarios"]["items"]["properties"]["evidence_ids"] = {
+        **STRINGS, "items": {"type": "string", "enum": sorted(evidence_ids)}}
     return schema
 
 
@@ -161,6 +162,16 @@ def constrained_portfolio(packet, reviews, capital=10000.0):
             conditional = normalized(review["scenario_allocations"][s])
             for ticker in tickers:
                 raw[ticker] += p[s] * conditional[ticker] / len(reviews)
+    return apply_allocation_limits(packet, raw, probabilities, capital)
+
+
+def apply_allocation_limits(packet, raw, probabilities, capital):
+    """Apply the same paper limits to an ensemble or a conditional candidate."""
+    assets = {a["ticker"]: a for a in packet["assets"]}
+    if not finite_number(capital) or capital <= 0:
+        raise ValueError("가상 자금은 양수여야 합니다.")
+    check_schema(raw, obj({t: NUM for t in [*assets, "CASH"]}))
+    normalized(raw)
     weights = dict(raw)
     adjustments = []
 
@@ -194,6 +205,38 @@ def constrained_portfolio(packet, reviews, capital=10000.0):
         "historical_volatility": sqrt(max(variance, 0)), "risk_adjustments": adjustments,
         "policy": {"minimum_cash": 0.15, "maximum_equity": 0.60, "maximum_stock_total": 0.15,
                    "maximum_single_stock": 0.05, "maximum_single_etf": 0.20, "volatility_budget": 0.12}}
+
+
+def scenario_candidates(result):
+    """Derive scenario-conditioned comparisons from saved views, without AI calls.
+
+    Conditional weights use each review's scenario probability. Before limits,
+    their probability-weighted sum equals the original ensemble raw allocation.
+    """
+    packet, reviews = result["data"], result["reviews"]
+    if set(reviews) != set(INVESTORS):
+        raise ValueError("다섯 관점의 저장된 검토가 필요합니다.")
+    tickers = [a["ticker"] for a in packet["assets"]] + ["CASH"]
+    for review in reviews.values():
+        validate_review(review, tickers)
+    probabilities = {i: normalized(r["scenario_probabilities"]) for i, r in reviews.items()}
+    scenarios = {s["id"]: s for s in result["scenario_draft"]["scenarios"]}
+    candidates = []
+    for sid in IDS:
+        total = sum(p[sid] for p in probabilities.values())
+        weights = dict.fromkeys(tickers, 0.0)
+        for investor, review in reviews.items():
+            influence = probabilities[investor][sid] / total if total > 0 else 1 / len(reviews)
+            for ticker, weight in normalized(review["scenario_allocations"][sid]).items():
+                weights[ticker] += influence * weight
+        candidates.append({"id": sid, "name": scenarios[sid]["name"], "probability": total / len(reviews),
+            "portfolio": apply_allocation_limits(packet, weights, {s: float(s == sid) for s in IDS},
+                                                 result["portfolio"]["capital"])})
+    candidates.sort(key=lambda c: (-c["probability"], c["id"]))
+    for candidate in candidates:
+        candidate["rank"] = 1 + sum(c["probability"] > candidate["probability"] + 1e-9 for c in candidates)
+        candidate["leading"] = candidate["rank"] == 1
+    return candidates
 
 
 def cached_research(runtime, stage, system, payload, schema, validator, client):
