@@ -140,7 +140,12 @@ def dispatch(args) -> None:
         path = args.out or args.input.with_suffix(".html")
         if path.resolve() == args.input.resolve() or (args.previous and path.resolve() == args.previous.resolve()):
             raise ValueError("보고서 출력 경로는 원본 JSON 파일과 달라야 합니다.")
-        write_html(path, render_report(result, previous))
+        if result.get("mode") == "meta_forecast":
+            from hedge_fund.no_cost.meta_report import render_meta_report
+
+            write_html(path, render_meta_report(result))
+        else:
+            write_html(path, render_report(result, previous))
         print(f"보고서 생성 완료 (새 AI 호출 없음): {path.resolve()}")
         if args.open_report:
             open_report(path)

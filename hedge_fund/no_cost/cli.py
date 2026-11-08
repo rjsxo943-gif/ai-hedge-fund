@@ -151,6 +151,14 @@ def main() -> None:
     parser.add_argument("--runtime-dir", type=Path, default=Path(".runtime"))
     commands = parser.add_subparsers(dest="command")
     commands.add_parser("doctor", help="check subscription login without a model call")
+    macro = commands.add_parser("macro", help="6~12개월 거시 시나리오와 다섯 관점의 가상 포트폴리오")
+    macro.add_argument("--packet", type=Path, help="저장된 최신 거시 자료 사용")
+    candidates = macro.add_mutually_exclusive_group()
+    candidates.add_argument("--stocks", help="개별 주식 후보 최대 8개; 기본 AAPL,MSFT,JPM,XOM")
+    candidates.add_argument("--etf-only", action="store_true")
+    macro.add_argument("--max-calls", type=int, default=6)
+    macro.add_argument("--cash", type=float, default=10000.0, help="USD 가상 자금")
+    macro.add_argument("--open-report", action="store_true")
     run = commands.add_parser("run", help="종목 입력 → 무료 수집 → 분석 → 한국어 HTML 보고서")
     run.add_argument("--tickers", help="AAPL,MSFT; 생략하면 입력받습니다")
     run.add_argument("--packet", type=Path, help="새 수집 대신 저장한 최신 데이터 사용")
@@ -189,7 +197,18 @@ def main() -> None:
             raise SystemExit(1) from exc
         return
     try:
-        if args.command in ("run", "settings", "report"):
+        if args.command == "macro":
+            from hedge_fund.no_cost.meta import run_meta
+            from hedge_fund.no_cost.workflow import open_report
+
+            if args.packet and (args.stocks is not None or args.etf_only):
+                raise ValueError("저장 자료와 후보 변경은 함께 지정할 수 없습니다. 새 수집 시 후보를 변경하세요.")
+            stocks = [] if args.etf_only else symbols(args.stocks) if args.stocks is not None else None
+            _, path = run_meta(args.runtime_dir, packet_path=args.packet, stocks=stocks,
+                               max_calls=args.max_calls, capital=args.cash)
+            if args.open_report:
+                open_report(path)
+        elif args.command in ("run", "settings", "report"):
             from hedge_fund.no_cost.workflow import dispatch
 
             dispatch(args)
@@ -225,6 +244,6 @@ def main() -> None:
             save_json(args.out, result)
             print(f"Saved analysis and paper proposal: {args.out} (new Codex calls: {llm.calls})")
     except (RuntimeError, ValueError, OSError, KeyError, TypeError, EOFError) as exc:
-        label = "중단" if args.command in ("run", "settings", "report") else "Stopped"
+        label = "중단" if args.command in ("macro", "run", "settings", "report") else "Stopped"
         print(f"{label}: {exc}", file=sys.stderr)
         raise SystemExit(1) from exc
