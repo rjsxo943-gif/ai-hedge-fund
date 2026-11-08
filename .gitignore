@@ -22,6 +22,9 @@ wheels/
 
 # Virtual Environment
 venv/
+.venv/
+.runtime/
+.pytest_cache/
 ENV/
 
 # Environment Variables
