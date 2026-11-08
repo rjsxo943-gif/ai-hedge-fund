@@ -11,7 +11,49 @@
 - 크레딧은 무료/유료를 구분하지 않고 모두 사용 거부. 구매·자동충전·결제 설정 변경 기능 없음.
 - 무료 데이터 오류, 인증 오류, 한도 도달 시 유료 서비스로 전환하지 않음.
 
-현재 버전은 **최신 데이터 분석 + 가상 포트폴리오 조정안**까지 제공합니다. 실제 증권계좌에 연결하거나 주문하지 않습니다.
+현재 버전은 **종목 입력 → 최신 데이터 분석 → 한국어 HTML 보고서 + 가상 포트폴리오 조정안**까지 제공합니다. 실제 증권계좌에 연결하거나 주문하지 않습니다.
+
+## 가장 간편한 실행
+
+설치가 끝났다면 Windows에서 프로젝트 폴더의 **`Start-Analysis.cmd`를 더블클릭**하세요.
+분석할 종목에 `AAPL,MSFT`처럼 입력하면 무료 데이터 수집부터 분석·보고서 생성까지 실행하고 로컬 브라우저로 보고서를 엽니다.
+Enter만 누르면 마지막에 입력한 관심 종목을 다시 사용합니다. 첫 실행의 기본 종목은 AAPL입니다.
+
+보고서에는 투자자별 한국어 근거, 강세·중립·약세 분포, 목표 비중과 조정 이유, 현재 가상 보유량과 목표 수량이 나옵니다.
+직전 완료 보고서가 있으면 같은 종목·같은 투자자의 방향과 확신도, 목표 비중을 비교합니다. 의견 비교에 추가 AI 호출은 없습니다.
+확신도는 AI가 표현한 판단 강도이며 실제 정답률이나 수익 확률이 아닙니다.
+
+명령으로 한 번에 실행할 수도 있습니다.
+
+```powershell
+.venv/Scripts/python.exe -m hedge_fund.no_cost run --tickers AAPL,MSFT --open-report
+```
+
+새 실행 경로는 기본적으로 새 AI 분석을 최대 10회 허용합니다. 2종목 × 5관점에 해당하며, 캐시가 있으면 그만큼 새 호출이 줄어듭니다.
+다른 한도가 필요하면 `run --max-calls 15`로 이번 실행에만 적용하세요. 기존 `analyze` 명령의 기본 상한은 5회입니다.
+상한이 부족하면 AI를 호출하기 전에 멈춥니다. 실패한 실행에서 이미 완료한 의견도 다음 실행에 재사용합니다.
+
+관심 종목과 기본 설정은 `.runtime/settings.json`에만 저장하며 Git에 올리지 않습니다.
+
+```powershell
+# 설정 조회: AI와 데이터 API 호출 없음
+.venv/Scripts/python.exe -m hedge_fund.no_cost settings
+
+# 기본 관심 종목, 가상 자금, 종목당 비중 상한 저장
+.venv/Scripts/python.exe -m hedge_fund.no_cost settings --tickers AAPL,MSFT --cash 10000 --max-position 0.20 --max-calls 10
+
+# 사용할 가상 장부 지정 / 지정 해제
+.venv/Scripts/python.exe -m hedge_fund.no_cost settings --paper-book .runtime/book.json
+.venv/Scripts/python.exe -m hedge_fund.no_cost settings --clear-paper-book
+```
+
+실행별 데이터와 보고서는 `.runtime/runs/실행시각/`에 `packet.json`, `report.json`, `report.html`로 보관합니다.
+HTML은 외부 스크립트·글꼴·서버 없이 파일 자체로 열 수 있습니다. 가상 장부가 포함될 수 있으므로 보고서도 Git에서 제외합니다.
+기존 분석 JSON만 HTML로 바꿀 때는 새 AI 호출이 없습니다.
+
+```powershell
+.venv/Scripts/python.exe -m hedge_fund.no_cost report --input .runtime/report.json --out .runtime/report.html --open-report
+```
 
 ## 설치
 
